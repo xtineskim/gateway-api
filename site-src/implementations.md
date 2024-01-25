@@ -83,6 +83,16 @@ cover, and documentation to help users get started.
 
 [gamma]:/concepts/gamma/
 
+## Quick Compare
+
+In this section, you will find comparisons of supported features of Gateway Controllers that have submitted a conformance report. 
+
+| Project Name                    | Cilium  | Envoy  |   |   |
+|---------------------------------|---|---|---|---|
+| Core Profiles (HTTP, TLS, Mesh) |   |   |   |   |
+| Supported Features              |   |   |   |   |
+|                                 |   |   |   |   |
+
 ## Implementations
 
 In this section you will find specific links to blog posts, documentation and other Gateway API references for specific implementations.
