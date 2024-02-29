@@ -15,6 +15,9 @@
 import shutil
 import logging
 from mkdocs import plugins
+import yaml
+import os
+import pandas
 
 log = logging.getLogger('mkdocs')
 
@@ -22,3 +25,34 @@ log = logging.getLogger('mkdocs')
 def on_pre_build(config, **kwargs):
     log.info("copying geps")
     shutil.copytree("geps","site-src/geps", dirs_exist_ok=True)
+
+    # calling to get the conformance reports generated
+    reports = generate()
+    create_md(reports)
+
+def create_md(reports):
+    pandas.set_option('display.max_colwidth',0)
+
+    data = pandas.DataFrame.from_dict(reports[0])
+    with open('site-src/test.md','w') as f:
+        f.write(data.to_markdown())
+
+
+
+
+# TODO : versioning of the reports should be changed
+conformance_path = "conformance/reports/v1.0.0/"
+def generate():
+    log.info("parsing conformance reports ============================")
+    yamls = []
+    for f in os.listdir(conformance_path):
+        x = load_yaml(conformance_path+f)
+        yamls.append(pandas.json_normalize(x))
+    return yamls
+
+def load_yaml(name):
+    with open(name, 'r') as file:
+        x = yaml.safe_load(file)
+
+    return x
+
