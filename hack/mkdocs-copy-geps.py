@@ -18,6 +18,8 @@ from mkdocs import plugins
 import yaml
 import os
 import pandas
+from fnmatch import fnmatch
+import glob
 
 log = logging.getLogger('mkdocs')
 
@@ -41,13 +43,17 @@ def create_md(reports):
 
 
 # TODO : versioning of the reports should be changed
-conformance_path = "conformance/reports/v1.0.0/"
+conformance_path = "conformance/reports/v1.0.0/**"
 def generate():
     log.info("parsing conformance reports ============================")
     yamls = []
-    for f in os.listdir(conformance_path):
-        x = load_yaml(conformance_path+f)
-        yamls.append(pandas.json_normalize(x))
+
+    for p in glob.glob(conformance_path, recursive=True):
+
+        if fnmatch(p, "*.yaml"):
+            x = load_yaml(p)
+            yamls.append(pandas.json_normalize(x))
+
     return yamls
 
 def load_yaml(name):
