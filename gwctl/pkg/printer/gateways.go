@@ -19,20 +19,22 @@ package printer
 import (
 	"fmt"
 	"io"
+	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
-	"time"
-
-	"sigs.k8s.io/yaml"
 
 	"sigs.k8s.io/gateway-api/gwctl/pkg/policymanager"
 	"sigs.k8s.io/gateway-api/gwctl/pkg/resourcediscovery"
+	"sigs.k8s.io/yaml"
 
 	"k8s.io/apimachinery/pkg/util/duration"
+	"k8s.io/utils/clock"
 )
 
 type GatewaysPrinter struct {
-	Out io.Writer
+	Out   io.Writer
+	Clock clock.Clock
 }
 
 type gatewayDescribeView struct {
@@ -50,7 +52,19 @@ func (gp *GatewaysPrinter) Print(resourceModel *resourcediscovery.ResourceModel)
 	row := []string{"NAME", "CLASS", "ADDRESSES", "PORTS", "PROGRAMMED", "AGE"}
 	tw.Write([]byte(strings.Join(row, "\t") + "\n"))
 
+	gatewayNodes := make([]*resourcediscovery.GatewayNode, 0, len(resourceModel.Gateways))
 	for _, gatewayNode := range resourceModel.Gateways {
+		gatewayNodes = append(gatewayNodes, gatewayNode)
+	}
+
+	sort.Slice(gatewayNodes, func(i, j int) bool {
+		if gatewayNodes[i].Gateway.GetName() != gatewayNodes[j].Gateway.GetName() {
+			return gatewayNodes[i].Gateway.GetName() < gatewayNodes[j].Gateway.GetName()
+		}
+		return gatewayNodes[i].Gateway.Spec.GatewayClassName < gatewayNodes[j].Gateway.Spec.GatewayClassName
+	})
+
+	for _, gatewayNode := range gatewayNodes {
 		var addresses []string
 		for _, address := range gatewayNode.Gateway.Status.Addresses {
 			addresses = append(addresses, address.Value)
@@ -74,7 +88,7 @@ func (gp *GatewaysPrinter) Print(resourceModel *resourcediscovery.ResourceModel)
 			}
 		}
 
-		age := duration.HumanDuration(time.Since(gatewayNode.Gateway.GetCreationTimestamp().Time))
+		age := duration.HumanDuration(gp.Clock.Since(gatewayNode.Gateway.GetCreationTimestamp().Time))
 
 		row := []string{
 			gatewayNode.Gateway.GetName(),
@@ -116,7 +130,8 @@ func (gp *GatewaysPrinter) PrintDescribeView(resourceModel *resourcediscovery.Re
 		for _, view := range views {
 			b, err := yaml.Marshal(view)
 			if err != nil {
-				panic(err)
+				fmt.Fprintf(os.Stderr, "failed to marshal to yaml: %v\n", err)
+				os.Exit(1)
 			}
 			fmt.Fprint(gp.Out, string(b))
 		}
