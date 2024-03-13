@@ -7,6 +7,8 @@ Implementors and integrators of Gateway API are encouraged to update this
 document with status information about their implementations, the versions they
 cover, and documentation to help users get started.
 
+[View a table to quickly compare supported features of projects](/implementation-table)
+
 ## Gateway Controller Implementation Status <a name="gateways"></a>
 
 - [Acnodal EPIC][1]
@@ -85,15 +87,7 @@ cover, and documentation to help users get started.
 
 [gamma]:/concepts/gamma/
 
-## Quick Compare
 
-In this section, you will find comparisons of supported features of Gateway Controllers that have submitted a conformance report. 
-
-| Project Name                    | Cilium  | Envoy  |   |   |
-|---------------------------------|---|---|---|---|
-| Core Profiles (HTTP, TLS, Mesh) |   |   |   |   |
-| Supported Features              |   |   |   |   |
-|                                 |   |   |   |   |
 
 ## Implementations
 
