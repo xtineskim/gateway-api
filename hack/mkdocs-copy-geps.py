@@ -57,6 +57,7 @@ def create_md(reports):
 
     # dropping TLS supportedFeatures column since no implementation has listed any supported features
     table = table.drop(["TLS: Supported Features"], axis=1)
+    table.rename(columns={"project":"Project", "name":"Protocol Profile","version":"Version" }, inplace=True)
     table = table.fillna("N/A")
     # Output markdown table
     with open('site-src/implementation-table.md','w') as f:
@@ -65,8 +66,7 @@ def create_md(reports):
 
 
 
-
-# TODO : versioning of the reports should be changed
+# the path should be changed when there is a new version
 conformance_path = "conformance/reports/v1.0.0/**"
 def getYaml():
     log.info("parsing conformance reports ============================")
@@ -74,7 +74,6 @@ def getYaml():
 
     for p in glob.glob(conformance_path, recursive=True):
 
-        #TODO: make sure to account for multiple yamls uploaded to a folder (ex kong)
         if fnmatch(p, "*.yaml"):
             x = load_yaml(p)
             profiles = pandas.json_normalize(x, record_path='profiles',meta=["implementation"] ) 
