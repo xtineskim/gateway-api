@@ -31,6 +31,7 @@ def on_pre_build(config, **kwargs):
     yamlReports = getYaml()
     
     create_md(yamlReports)
+    httproute_table(yamlReports)
 
 # outputs reports to markdown file
 def create_md(reports):
@@ -66,6 +67,40 @@ def create_md(reports):
     with open('site-src/implementation-table.md','w') as f:
         f.write("This table is populated from the conformance reports uploaded by project implementations.\n\n")
         f.write(table.to_markdown(index=False)+'\n')
+
+# will have to be updated if new features are added
+httproute_extended_conformance_features_list = ['HTTPRouteBackendRequestHeaderModification',"HTTPRouteQueryParamMatching",'HTTPRouteMethodMatching',"HTTPRouteResponseHeaderModification","HTTPRoutePortRedirect","HTTPRouteSchemeRedirect","HTTPRoutePathRedirect","HTTPRouteHostRewrite","HTTPRoutePathRewrite","HTTPRouteRequestMirror","HTTPRouteRequestMultipleMirrors","HTTPRouteRequestTimeout", "HTTPRouteBackentTimeout","HTTPRouteParentRefPort"]
+
+def httproute_table(reports):
+  # experimant to making the gateway table
+ 
+  projects = reports['organization']
+
+  http_reports = reports.loc[reports["name"]=='HTTP']
+  http_reports.sort_values(['organization','version'], inplace=True)
+  http_reports.drop_duplicates(subset='organization', inplace=True, keep='last')
+  
+  table = pandas.DataFrame(columns=http_reports['organization'])
+  table.insert(loc=0, column='Features', value=httproute_extended_conformance_features_list)
+  http_reports= http_reports[["organization","extended.supportedFeatures"]] 
+  with open('site-src/test.md','w') as f:
+    f.write(http_reports.to_markdown(index=False)+'\n')
+    
+  table.set_index('Features')
+  http_reports.set_index('organization')
+  for feat in  httproute_extended_conformance_features_list:
+    
+    for proj in projects: # for each project, check if the feature is supported
+      log.info("HELLO '{0}'".format(feat in http_reports.loc[http_reports["organization"]==proj]['extended.supportedFeatures']))
+
+      if feat in http_reports.loc[http_reports["organization"]==proj]['extended.supportedFeatures']:
+        table.at[feat,proj] = 'yes'
+      else:
+        table.loc[feat,proj]= 'no'
+  with open('site-src/test-implementation-table.md','w') as f:
+    f.write("This table is populated from the conformance reports uploaded by project implementations.\n\n")
+    f.write(table.to_markdown(index=False)+'\n')
+
 
 
 
