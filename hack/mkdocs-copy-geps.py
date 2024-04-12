@@ -92,9 +92,9 @@ def httproute_table(reports):
     for proj in projects: # for each project, check if the feature is supported
 
       if feat in http_reports.loc[http_reports["organization"]==proj]['extended.supportedFeatures'].to_list()[0]:
-        table.loc[table['Features']==feat,proj] = 'yes'
+        table.loc[table['Features']==feat,proj] = ':white_check_mark:'
       else:
-        table.loc[table['Features']==feat,proj] = 'no'
+        table.loc[table['Features']==feat,proj] = ':x:'
 
   with open('site-src/httproute-implementation-table.md','w') as f:
     f.write("This table is populated from the conformance reports uploaded by project implementations.\n\n")
