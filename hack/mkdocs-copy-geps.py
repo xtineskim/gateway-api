@@ -30,49 +30,15 @@ def on_pre_build(config, **kwargs):
     # calling to get the conformance reports generated
     yamlReports = getYaml()
     
-    create_md(yamlReports)
-    httproute_table(yamlReports)
+    generate_tables(yamlReports)
 
-# outputs reports to markdown file
-def create_md(reports):
-    # getting rid of some columns
-    reports = reports.drop(columns=['implementation']) 
-    
-    tests = reports[["organization","version","name", "extended.supportedFeatures"]]
-    tests = tests.groupby(['organization']).apply(lambda x: x)
 
-    testNames = tests['name'].unique() # HTTP, TLS, MESH, etc.
-    df =tests
-
-    table= reports.groupby(["organization"], as_index=False).name.apply(' '.join).apply(lambda x: x)
-
-    for n in testNames:
-        temp = df.loc[df['name']==n]
-        temp.rename(columns={"extended.supportedFeatures":n+': Supported Features'},inplace=True)
-        temp=temp.drop(["name","organization"],axis=1)
-        temp.reset_index(inplace=True)
-        temp = temp.drop(["level_1"],axis=1)
-        table = table.merge(temp, how="left")
-
-    # dropping TLS supportedFeatures column since no implementation has listed any supported features
-    table = table.drop(["TLS: Supported Features"], axis=1)
-    table.rename(columns={"organization":"Organization", "name":"Protocol Profile","version":"Version" }, inplace=True)
-    table = table.fillna("N/A")
-    
-    # keep the latest version in the table
-    table.sort_values(['Organization','Version'], inplace=True)
-    table.drop_duplicates(subset="Organization", inplace=True,keep='last')
-
-    # Output markdown table
-    with open('site-src/implementation-table.md','w') as f:
-        f.write("This table is populated from the conformance reports uploaded by project implementations.\n\n")
-        f.write(table.to_markdown(index=False)+'\n')
 
 # NOTE: will have to be updated if new features are added
 httproute_extended_conformance_features_list = ['HTTPRouteBackendRequestHeaderModification',"HTTPRouteQueryParamMatching",'HTTPRouteMethodMatching',"HTTPRouteResponseHeaderModification","HTTPRoutePortRedirect","HTTPRouteSchemeRedirect","HTTPRoutePathRedirect","HTTPRouteHostRewrite","HTTPRoutePathRewrite","HTTPRouteRequestMirror","HTTPRouteRequestMultipleMirrors","HTTPRouteRequestTimeout", "HTTPRouteBackendTimeout","HTTPRouteParentRefPort"]
 
-tls_extended_confomrance_features_list=[]
-def httproute_table(reports):
+
+def generate_tables(reports):
   # experimant to making the gateway table
  
   projects = reports['organization']
@@ -96,10 +62,12 @@ def httproute_table(reports):
       else:
         table.loc[table['Features']==feat,proj] = ':x:'
 
-  with open('site-src/httproute-implementation-table.md','w') as f:
-    f.write("This table is populated from the conformance reports uploaded by project implementations.\n\n")
-    f.write(table.to_markdown(index=False)+'\n')
+  with open('site-src/implementation-table.md','w') as f:
+    f.write("The following tables are populated from the conformance reports uploaded by project implementations. They are separated into the extended features that each project supports listed in their reports.\n\n")
+    f.write(table.to_markdown(index=False)+'\n\n')
+    f.write("# Mesh Comparison\n\n")
 
+    f.write(http_reports.to_markdown())
 
 
 
