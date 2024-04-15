@@ -65,9 +65,9 @@ def generate_tables(reports):
   with open('site-src/implementation-table.md','w') as f:
     f.write("The following tables are populated from the conformance reports uploaded by project implementations. They are separated into the extended features that each project supports listed in their reports.\n\n")
     f.write(table.to_markdown(index=False)+'\n\n')
-    f.write("# Mesh Comparison\n\n")
 
-    f.write(http_reports.to_markdown())
+    # f.write("# Mesh Comparison\n\n")
+    # f.write(table.to_markdown())
 
 
 
