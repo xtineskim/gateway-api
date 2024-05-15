@@ -28,6 +28,8 @@ def on_pre_build(config, **kwargs):
 
     yamlReports = getYaml()
 
+    with open('site-src/test.md', 'w') as f:
+        f.write(yamlReports.to_markdown())
     generate_conformance_tables(yamlReports)
 
 
@@ -104,14 +106,23 @@ def generate_profiles_report(reports, route):
 
 
 # the path should be changed when there is a new version
-conformance_path = "conformance/reports/v1.0.0/**"
+conformance_path = "conformance/reports/v1.1.0/**"
+pathTemp = "conformance/reports/*/"
+
+
+def getLatestPath():
+    versions = sorted(glob.glob(pathTemp, recursive=True))
+    report_path = versions[-2]+"**"
+    log.info(report_path)
+    return report_path
 
 
 def getYaml():
     log.info("parsing conformance reports ============================")
     yamls = []
 
-    for p in glob.glob(conformance_path, recursive=True):
+    conf_path = getLatestPath()
+    for p in glob.glob(conf_path, recursive=True):
 
         if fnmatch(p, "*.yaml"):
 
