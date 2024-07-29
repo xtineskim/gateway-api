@@ -14,6 +14,7 @@ Similar to the HTTPRoute Timeouts (GEP # 1742), the goal of this GEP is to creat
 
 - The ability to set a request timeout for unary RPC
 - The ability to disable timeouts (set to 0s) for streaming RPC
+- Define supporting the semantics of the gRPC library
 
 ## Non-Goals
 
@@ -21,7 +22,7 @@ Create a design for bidirectional streaming. Although this would be very useful,
 
 ## Introduction
 
-This GEP intends to find common timeouts that we can build into the Gateway API for GRPC Route.
+This GEP intends to find common timeouts that we can build into the Gateway API for gRPC Route.
 
 gRPC has the following 4 cases:
 - Unary (single req, single res)
@@ -29,9 +30,21 @@ gRPC has the following 4 cases:
 - Server Stream (Client sends a single req, Server replies with a stream)
 - Bidirectional Streaming 
 
-For this initial design however, we’ll focus on unary connections, and provide room for discussion on having a streaming semantics defined for HTTP, GRPC, etc in a future iteration.
+Below is a high level sequance diagram of a HTTP/2 stream connection that occurs between a client and upstream:
 
-Most implementations have a proxy for GRPC, as listed in the table here. From the table, implementations rely on either Envoy, Nginx, F5 BigIP, Pipy, HAProxy, Litespeed, or Traefik as their proxy in their dataplane. 
+```mermaid
+sequenceDiagram
+    Client ->Upstream: OPEN CONNECTION
+    Client->>Upstream: request message    
+    Note over Client,Upstream: Headers frame, x*data frame(s)
+    Client->>+Upstream: Frames * x
+    Client->>Upstream: EOS
+    Upstream->>-Client: response headers
+    Upstream->>Client: Frames * x
+    Upstream->>Client: EOS
+```
+
+Most implementations have a proxy for gRPC, as listed in the table here. From the table, implementations rely on either Envoy, Nginx, F5 BigIP, Pipy, HAProxy, Litespeed, or Traefik as their proxy in their dataplane. 
 For the sake of brevity, the flow of timeouts are shown in a generic flow diagram (same diagram as [GEP 1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/#flow-diagrams-with-available-timeouts)):
 
 ```mermaid
@@ -61,21 +74,21 @@ Some differences from HTTPRoute timeouts
 
 Noted by [@gnossen](https://github.com/kubernetes-sigs/gateway-api/discussions/3103#discussioncomment-9732739), the timeout field in a bidirectional stream is never complete, since the timer only starts after the request is finished, since the timer is never started. Envoy uses the config `grpc_timeout_header_max` in order to start the timer from when the first request message is initiated. 
 
-Nginx uses grpc_<>_timeout is used to configure of GRPC timeouts, which occurs between the proxy and upstream (`grpc_connect_timeout,grpc_send_timeout, grpc_read_timeout`)
+Nginx uses grpc_<>_timeout is used to configure of gRPC timeouts, which occurs between the proxy and upstream (`grpc_connect_timeout,grpc_send_timeout, grpc_read_timeout`)
 
 ## API
 
-The proxy implementations for the dataplane for the majority have some way to configure GRPC timeouts.
+The proxy implementations for the dataplane for the majority have some way to configure gRPC timeouts.
 
 ### Timeout Values
 
 To remain consistent with the HTTPRoute’s timeouts, there will be the same timeout.requests and timeout.backendRequest that can be configurable. There is also a timeout.streamingRequest to capture the ability to disable timeouts for streaming RPC
 
-Unary RCP
+Unary RPC
 
 Remaining consistent with HTTPRoute’s timeout values:
 - `timeout.requests`
-The timeout for the Gateway API implementation to send a res to a client GRPC request. The timer should start when connection is started, since this will ideally make sense with the stream option. This field is optional Extended support.
+The timeout for the Gateway API implementation to send a res to a client gRPC request. The timer should start when connection is started, since this will ideally make sense with the stream option. This field is optional Extended support.
 - `timeout.backendRequest`
 The timeout for a single request from the gateway to upstream. This field is optional Extended support.
 
@@ -86,7 +99,7 @@ The timeout value for streaming. Currently, only the value of 0s will be allowed
 GO
 ```
 type GRPCRouteRule struct {
-    // Timeouts defines the timeouts that can be configured for an GRPC request.
+    // Timeouts defines the timeouts that can be configured for an gRPC request.
     //
     // Support: Extended
     //
@@ -103,7 +116,7 @@ type GRPCRouteRule struct {
 //
 // +kubebuilder:validation:XValidation:message="backendRequest timeout cannot be longer than request timeout",rule="!(has(self.request) && has(self.backendRequest) && duration(self.request) != duration('0s') && duration(self.backendRequest) > duration(self.request))"
 type GRPCRouteTimeouts struct {
-    // Request specifies the maximum duration for a gateway to respond to an GRPC request.
+    // Request specifies the maximum duration for a gateway to respond to an gRPC request.
     // If the gateway has not been able to respond before this deadline is met, the gateway
     // MUST return a timeout error.
     //
