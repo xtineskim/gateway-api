@@ -5,30 +5,63 @@
 
 (See status definitions [here](/geps/overview/#gep-states).)
 
-## TLDR
+## TL;DR
 
-Similar to the HTTPRoute Timeouts (GEP # 1742), the goal of this GEP is to create a design for implementing GRPCRoute Timeouts
+Similar to the HTTPRoute Timeouts ([GEP #1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/)), the goal of this GEP is to create a design for implementing GRPCRoute Timeouts
 
 ## Goals
 @arkodg (original requester of this experimental feature) had the following listed in the discussion, which is a good starting point the API of GRPCRoute timeouts
 
 - The ability to set a request timeout for unary RPC
+- The ability to set a request timeout for bidirectional streaming
 - The ability to disable timeouts (set to 0s) for streaming RPC
-- Define supporting the semantics of the gRPC library
+- Define GRPCRoute timeouts in a manner supporting the semantics of the gRPC 
 
 ## Non-Goals
 
-Create a design for bidirectional streaming. Although this would be very useful, I propose that we leave further iteration on laying the grounds for enabling this discussion. Furthermore, we should look into streaming for HTTP, and update GEP 1742 as well.
+Define the overall structure of handling streaming for other routes. For example, we should look into streaming for HTTP, and update GEP 1742 as well.
 
 ## Introduction
 
-This GEP intends to find common timeouts that we can build into the Gateway API for gRPC Route.
+This GEP intends to define timeout semantics that we can build into the Gateway API for GRPCRoute.
 
 gRPC has the following 4 cases:
 - Unary (single req, single res)
 - Client Stream (Client sends a stream of messages, server replies with a res)
 - Server Stream (Client sends a single req, Server replies with a stream)
 - Bidirectional Streaming 
+
+Read the [gRPC docs on more details](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
+
+
+Most implementations have a proxy for gRPC to implement Gateway API, as listed in [GEP 1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/#background-on-implementations). Implementations rely on either Envoy, Nginx, F5 BigIP, Pipy, HAProxy, Litespeed, or Traefik as their proxy. 
+
+Below is a sequence diagram of the timeouts from a client (outside the cluster), to the gateway (a proxy implementation), then to a service over an HTTP/2 connection:
+
+```mermaid
+sequenceDiagram
+  
+    participant C as Client
+    participant P as Proxy
+    participant U as Upstream
+    C->P: connection
+    rect rgb(50, 108, 229 )
+    C->>P: Request Message (stream 1)
+
+    Note over C,P: Repeated for n streams
+    P->U: connection
+    rect rgb(50, 108, 229 )
+    P->>U: Request Message (stream 1)
+    U->>P: Response Message (stream 1)
+    Note over P,U: Repeated for n streams
+    end
+    P->>C: Response Message (stream 1)
+    Note right of P: Repeat if connection sharing
+    end
+    U->>C: Connection ended
+```
+Multiple streams share the same connection, and depending on if a unary request/response or a stream request/response is sent, theflow of messages may be independent of each other. 
+Note that streams don't have to flow in order. The Proxy or Upstream can choose to send back its intial metadata _or_ wait for for the client to start streaming messages. 
 
 Below is a high level sequance diagram of a HTTP/2 stream connection that occurs between a client and upstream:
 
@@ -42,32 +75,6 @@ sequenceDiagram
     Upstream->>-Client: response headers
     Upstream->>Client: Frames * x
     Upstream->>Client: EOS
-```
-
-Most implementations have a proxy for gRPC, as listed in the table here. From the table, implementations rely on either Envoy, Nginx, F5 BigIP, Pipy, HAProxy, Litespeed, or Traefik as their proxy in their dataplane. 
-For the sake of brevity, the flow of timeouts are shown in a generic flow diagram (same diagram as [GEP 1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/#flow-diagrams-with-available-timeouts)):
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant P as Proxy
-    participant U as Upstream
-    C->>P: Connection Started
-    C->>P: Starts sending Request
-    C->>P: Finishes Headers
-    C->>P: Finishes request
-    P->>U: Connection Started
-    P->>U: Starts sending Request
-    P->>U: Finishes request
-    P->>U: Finishes Headers
-    U->>P: Starts Response
-    U->>P: Finishes Headers
-    U->>P: Finishes Response
-    P->>C: Starts Response
-    P->>C: Finishes Headers
-    P->>C: Finishes Response
-    Note right of P: Repeat if connection sharing
-    U->>C: Connection ended
 ```
 
 Some differences from HTTPRoute timeouts
