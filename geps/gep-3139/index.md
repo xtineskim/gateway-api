@@ -23,6 +23,8 @@ Define the overall structure of handling streaming for other routes. For example
 
 ## Introduction
 
+In order to stay [aligned with gRPC](https://grpc.io/docs/what-is-grpc/core-concepts/#deadlines), we define a timeout as how a client is willing to wait for an RPC to complete before a `DEADLINE_EXCEEDED` error.
+
 This GEP intends to define timeout semantics that we can build into the Gateway API for GRPCRoute.
 
 gRPC has the following 4 cases:
@@ -36,7 +38,7 @@ Read the [gRPC docs on more details](https://grpc.io/docs/what-is-grpc/core-conc
 
 Most implementations have a proxy for gRPC to implement Gateway API, as listed in [GEP 1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/#background-on-implementations). Implementations rely on either Envoy, Nginx, F5 BigIP, Pipy, HAProxy, Litespeed, or Traefik as their proxy. 
 
-Below is a sequence diagram of the timeouts from a client (outside the cluster), to the gateway (a proxy implementation), then to a service over an HTTP/2 connection:
+Below is a sequence diagram of the timeouts from a client (outside the cluster), to the gateway (a proxy implementation), then to a service over HTTP/2 connection:
 
 ```mermaid
 sequenceDiagram
@@ -89,9 +91,10 @@ The proxy implementations for the dataplane for the majority have some way to co
 
 ### Timeout Values
 
-To remain consistent with the HTTPRoute’s timeouts, there will be the same timeout.requests and timeout.backendRequest that can be configurable. There is also a timeout.streamingRequest to capture the ability to disable timeouts for streaming RPC
+Timeout values will be of type [Duration](https://gateway-api.sigs.k8s.io/geps/gep-2257/). Similar to HTTPRoute timeouts, a zero-valued timeout ("0s") MUST be interpreted as disabling the timeout. A valid non-zero-valued timeout MUST be >= 1ms.
+`timeout.maxStreamDuration`
 
-Unary RPC
+- The timeout value to allow users to configure streaming duration, which will take precedence over a specified [gRPC header timeout value](https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests). A value of `0s` will disable a timeout - meaning a client's request will not timeout.  This field is optional. 
 
 Remaining consistent with HTTPRoute’s timeout values:
 - `timeout.requests`
@@ -102,6 +105,9 @@ The timeout for a single request from the gateway to upstream. This field is opt
 Disabling streaming RPC
 - `timeout.streamingRequest`
 The timeout value for streaming. Currently, only the value of 0s will be allowed, but leaving this field as a string to allow for future work around bidirectional streaming timers. This field is optional Extended support.
+
+If no timeout values are specified in the GRPCRoute, then the `grpc-timeout` header will determine a request's timeout.
+
 
 GO
 ```
@@ -131,7 +137,7 @@ type GRPCRouteTimeouts struct {
     // `GRPCRoute` will cause a timeout if a client request is taking longer than 10 seconds
     // to complete.
     //
-    // This timeout is intended to cover as close to the whole request-response transaction
+    // ThiSs timeout is intended to cover as close to the whole request-response transaction
     // as possible although an implementation MAY choose to start the timeout after the entire
     // request stream has been received instead of immediately after the transaction is
     // initiated by the client.
@@ -166,6 +172,8 @@ type GRPCRouteTimeouts struct {
     //
     // +optional
     StreamingRequest *Duration `json:"request,omitempty"`
+
+    // MaxStreamDuration specifies a timeout
 }
 
 // Duration is a string value representing a duration in time. The format is as specified
