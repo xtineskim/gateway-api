@@ -25,6 +25,8 @@ Define the overall structure of handling streaming for other routes. For example
 
 In order to stay [aligned with gRPC](https://grpc.io/docs/what-is-grpc/core-concepts/#deadlines), we define a timeout as how a client is willing to wait for an RPC to complete before a `DEADLINE_EXCEEDED` error.
 
+A timeout in terms of gRPC is the maximum duration for the peer to respond to a gRPC request. This timeout is relative to when the client application initiates the RPC or, in the case of a proxy, when the proxy first receives the stream. If the stream has not entered the closed state this long after the timer has started, the RPC MUST be terminated with gRPC status 4 (DEADLINE_EXCEEDED).
+
 This GEP intends to define timeout semantics that we can build into the Gateway API for GRPCRoute.
 
 gRPC has the following 4 cases:
@@ -35,10 +37,10 @@ gRPC has the following 4 cases:
 
 Read the [gRPC docs on more details](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
 
+### gRPC with Proxy
+Currently, Gateway API implementations utilize a proxy (different proxies are listed in [GEP 1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/#background-on-implementations)). Implementations rely on either Envoy, Nginx, F5 BigIP, Pipy, HAProxy, Litespeed, or Traefik as their proxy. 
 
-Most implementations have a proxy for gRPC to implement Gateway API, as listed in [GEP 1742](https://gateway-api.sigs.k8s.io/geps/gep-1742/#background-on-implementations). Implementations rely on either Envoy, Nginx, F5 BigIP, Pipy, HAProxy, Litespeed, or Traefik as their proxy. 
-
-Below is a sequence diagram of the timeouts from a client (outside the cluster), to the gateway (a proxy implementation), then to a service over HTTP/2 connection:
+Below is a (generic) sequence diagram of gRPC timeouts from a client (outside the cluster), to the gateway (a proxy implementation), then to a service over an HTTP/2 connection:
 
 ```mermaid
 sequenceDiagram
@@ -46,44 +48,41 @@ sequenceDiagram
     participant C as Client
     participant P as Proxy
     participant U as Upstream
-    C->P: connection
-    rect rgb(50, 108, 229 )
+    C-->P: connection
+
+    P-->U: connection
     C->>P: Request Message (stream 1)
 
     Note over C,P: Repeated for n streams
-    P->U: connection
-    rect rgb(50, 108, 229 )
     P->>U: Request Message (stream 1)
     U->>P: Response Message (stream 1)
     Note over P,U: Repeated for n streams
-    end
     P->>C: Response Message (stream 1)
     Note right of P: Repeat if connection sharing
-    end
-    U->>C: Connection ended
+    U-->C: Connection closed if terminated
 ```
-Multiple streams share the same connection, and depending on if a unary request/response or a stream request/response is sent, theflow of messages may be independent of each other. 
-Note that streams don't have to flow in order. The Proxy or Upstream can choose to send back its intial metadata _or_ wait for for the client to start streaming messages. 
+Multiple streams share the same connection, and depending on if a unary request/response or a stream request/response is sent, the flow of messages may be independent of each other. 
+Note that streams do not have to execute in order. The Proxy or Upstream can choose to send back its intial metadata _or_ wait for for the client to start streaming messages. 
 
-Below is a high level sequance diagram of a HTTP/2 stream connection that occurs between a client and upstream:
+### gRPC without Proxy
+Below is a high level sequance diagram of a HTTP/2 stream connection that occurs between a client and upstream (no proxy):
 
 ```mermaid
 sequenceDiagram
-    Client ->Upstream: OPEN CONNECTION
-    Client->>Upstream: request message    
-    Note over Client,Upstream: Headers frame, x*data frame(s)
-    Client->>+Upstream: Frames * x
-    Client->>Upstream: EOS
-    Upstream->>-Client: response headers
-    Upstream->>Client: Frames * x
-    Upstream->>Client: EOS
+    Client -->Upstream: connection 
+    Client->>Upstream: Request Message (stream 1) 
+    Note over Client,Upstream: Repeated for n streams 
+    Upstream->>Client: Response Message 
+    Note over Client,Upstream: Repeated for n streams
+    Upstream-->Client: connection closed if terminated 
 ```
+Note that streams do not have to execute in order. The Upstream can choose to send back its intial metadata _or_ wait for for the client to start streaming messages. 
 
-Some differences from HTTPRoute timeouts
+Some differences from HTTPRoute timeouts:
 
-Noted by [@gnossen](https://github.com/kubernetes-sigs/gateway-api/discussions/3103#discussioncomment-9732739), the timeout field in a bidirectional stream is never complete, since the timer only starts after the request is finished, since the timer is never started. Envoy uses the config `grpc_timeout_header_max` in order to start the timer from when the first request message is initiated. 
+Noted by [@gnossen](https://github.com/kubernetes-sigs/gateway-api/discussions/3103#discussioncomment-9732739), the semantics should be "timeout from when the first request message is started" (not when the first request is finished).
 
-Nginx uses grpc_<>_timeout is used to configure of gRPC timeouts, which occurs between the proxy and upstream (`grpc_connect_timeout,grpc_send_timeout, grpc_read_timeout`)
+Nginx uses [grpc_<>_timeout](https://nginx.org/en/docs/http/ngx_http_grpc_module.html) is used to configure of gRPC timeouts, which occurs between the proxy and upstream (`grpc_connect_timeout,grpc_send_timeout, grpc_read_timeout`)
 
 ## API
 
@@ -92,21 +91,16 @@ The proxy implementations for the dataplane for the majority have some way to co
 ### Timeout Values
 
 Timeout values will be of type [Duration](https://gateway-api.sigs.k8s.io/geps/gep-2257/). Similar to HTTPRoute timeouts, a zero-valued timeout ("0s") MUST be interpreted as disabling the timeout. A valid non-zero-valued timeout MUST be >= 1ms.
+
 `timeout.maxStreamDuration`
 
-- The timeout value to allow users to configure streaming duration, which will take precedence over a specified [gRPC header timeout value](https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests). A value of `0s` will disable a timeout - meaning a client's request will not timeout.  This field is optional. 
+- The timeout value to allow users to configure streaming duration. If a GatewayAPI implementation and a [gRPC header timeout](https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md#requests) are both present, the "stricter" of the values will take precedence . A value of `0s` will disable a timeout - meaning a client's request will not timeout. This field is optional. 
 
-Remaining consistent with HTTPRoute’s timeout values:
-- `timeout.requests`
-The timeout for the Gateway API implementation to send a res to a client gRPC request. The timer should start when connection is started, since this will ideally make sense with the stream option. This field is optional Extended support.
-- `timeout.backendRequest`
-The timeout for a single request from the gateway to upstream. This field is optional Extended support.
+`timeout.strictEnforcement`
 
-Disabling streaming RPC
-- `timeout.streamingRequest`
-The timeout value for streaming. Currently, only the value of 0s will be allowed, but leaving this field as a string to allow for future work around bidirectional streaming timers. This field is optional Extended support.
+- An enum value for specifying between GRPCRoute timeouts and grpc-timeout metadata timeoutsm. If set to `allow`, the timeout value that is stricter of two. If set to `deny`, it is assumed the implementation does not allow for this features. 
 
-If no timeout values are specified in the GRPCRoute, then the `grpc-timeout` header will determine a request's timeout.
+If no timeout values are specified in the GRPCRoute, then the `grpc-timeout` header (from the client) will determine a request's timeout.
 
 
 GO
@@ -129,52 +123,54 @@ type GRPCRouteRule struct {
 //
 // +kubebuilder:validation:XValidation:message="backendRequest timeout cannot be longer than request timeout",rule="!(has(self.request) && has(self.backendRequest) && duration(self.request) != duration('0s') && duration(self.backendRequest) > duration(self.request))"
 type GRPCRouteTimeouts struct {
-    // Request specifies the maximum duration for a gateway to respond to an gRPC request.
-    // If the gateway has not been able to respond before this deadline is met, the gateway
+    // MaxStreamDuration specifies the maximum duration for upstream to respond to an gRPC request from a client.
+    // If upstream has not been able to respond before this deadline is met, upstream
     // MUST return a timeout error.
     //
-    // For example, setting the `rules.timeouts.request` field to the value `10s` in an
+    // For example, setting the `rules.timeouts.MaxStreamRequest` field to the value `10s` in an
     // `GRPCRoute` will cause a timeout if a client request is taking longer than 10 seconds
     // to complete.
     //
-    // ThiSs timeout is intended to cover as close to the whole request-response transaction
+    // This timeout is intended to cover as close to the whole request-response transaction
     // as possible although an implementation MAY choose to start the timeout after the entire
     // request stream has been received instead of immediately after the transaction is
     // initiated by the client.
     //
-    // When this field is unspecified, request timeout behavior is implementation-specific.
+    // When omitted, the timeout value will default to the `grpc-timeout` value in the request. 
     //
     // Support: Extended
     //
     // +optional
-    Request *Duration `json:"request,omitempty"`
+    MaxStreamDuration *Duration `json:"maxStreamDuration,omitempty"`
 
-    // BackendRequest specifies a timeout for an individual request from the gateway
-    // to a backend. This covers the time from when the request first starts being
-    // sent from the gateway to when the full response has been received from the backend.
+    // StrictEnforcement enum specifies which timeout to use request from a client 
+    // to upstream if 2 are specified. This occurs when a gRPC timeout is specified in the GRPCRoute  
+    // and a gRPC timeout is specified in the grpc-timeout header of the request.
+    // The values permitted are "allow" and "deny".
     //
-    // An entire client GRPC transaction with a gateway, covered by the Request timeout,
-    // may result in more than one call from the gateway to the destination backend,
-    // for example, if automatic retries are supported.
-    //
-    // Because the Request timeout encompasses the BackendRequest timeout, the value of
-    // BackendRequest must be <= the value of Request timeout.
+    // A propagated gRPC request may result in other services being called upon. If 
+    // StrictEnforcement is set to "allow", then the MaxStreamDuration will be the stricter value of 
+    // either the specified `grpc-timeout` metadata, or the timeout specified by the GRPCRoute.
+    // If set to "deny", it is assumed that this is not implemented, and the timeout will 
+    // default to the value in in the grpc-timeout metadata.
     //
     // Support: Extended
     //
     // +optional
-    BackendRequest *Duration `json:"backendRequest,omitempty"`
+    StrictEnforcement *StrictEnforcement `json:"strictEnforcement,omitempty"`
 
-    // StreamingRequest specifies the ability for disabling bidirectional streaming. 
-    // The only supported settings are `0s`, so users can disable timeouts for streaming
-    //
-    // Support: Extended
-    //
-    // +optional
-    StreamingRequest *Duration `json:"request,omitempty"`
-
-    // MaxStreamDuration specifies a timeout
 }
+
+// StrictEnforcement specifies enum of Allow or Deny 
+//
+// +kubebuilder:validation:Enum=Allow;Deny
+type StrictEnforcement string
+
+const(
+  StrictEnforcementAllow StrictEnforcement = "Allow"
+
+  StrictEnforcementDeny StrictEnforcement = "Deny"
+)
 
 // Duration is a string value representing a duration in time. The format is as specified
 // in GEP-2257, a strict subset of the syntax parsed by Golang time.ParseDuration.
@@ -195,16 +191,14 @@ spec:
     - name: some-service
       port: 8080
     timeouts:
-      request: 10s
-      backendRequest: 2s
-      streamRequest: 0s
+      maxStreamDuration: 10s
+      strictEnforcement: allow
 ```
 ## Conformance Details
 The feature name for this feature is GRPCRouteTimeout, and its support is Extended.
 Gateway implementations can indicate support for this feautre using the following:
-- `GRPCRouteRequestTimeount`
-- `GRPCRouteRequestBackendTimeout`
-- `GRPCRouteStreamingRequestTimeout`
+- `GRPCRouteMaxStreamDuration`
+- `GRPCRouteStrictEnforcement`
 
 
 ## Alternatives
